@@ -1,0 +1,155 @@
+### Hanna Lahmar 17/09/19
+### importation des modules
+import numpy as np
+import scipy as sp
+import time 
+import matplotlib.pyplot as plt
+
+from mpl_toolkits.mplot3d import Axes3D
+
+# programme qui calcule la trajectoire des 8 planetes et du soleil 
+tstart = time.time() # tps de debut
+
+### definition des constantes 
+G = 6.67 * 1e-11 # constante gravitationnelle
+
+tab_mass = np.array([ 1.989 * 1e30 , 3.285 * 1e23 , 4.867 * 1e24 , 5.972 * 1e24 , 6.39 * 1e23 , 1.898 * 1e27 , 5.683 * 1e26 , 8.681 * 1e25 , 1.024 * 1e26]) # tableau des masses en kg des différents corps 
+
+planet = ['Soleil' , 'Mercure', 'Venus' , 'Terre','Mars' , 'Jupiter' , 'Saturne' , 'Uranus' , 'Neptune'] # ordre du Soleil et des planètes
+
+day = 3600 * 24 # 1 jour en s
+UA = 149597870700.0 # unité astronomique en m
+
+# condition initiales a 2019-11-12T13:10:41,962 
+posx_initiale = np.array([ -0.003382850598 , 0.178966077706 , 0.194709368972 , 0.638503940022 , -1.609755271434 , 0.154385371753 , 3.551738878776 , 16.334366498504 ,  29.206564902603 ]) * UA # position selon x initiale en m dans le meme ordre que la variable planet 
+posy_initiale = np.array([ 0.007525272914 , 0.260420454761 , -0.692393088784 ,	0.761003128395 	,  -0.301165376792 , -5.235564166634 , -9.380999210197 , 11.235474477398 ,  -6.512808234818 ])  * UA # position selon y initiale en m 
+posz_initiale = np.array([ 0.000011591294 , 0.00394895034 , -0.02102371684 , -0.000022204623 ,  0.032956575419 , 0.018258151657 , 0.021722389412 , -0.169888051473 ,  -0.538970975572 ])  * UA # position selon z initiale en m 
+ 
+vitx_initiale = np.array([ -0.000008455686 , -0.02842488147 , 0.019317592953 , -0.013380239865 	, 0.003153821364 , 0.007450801008 ,  0.004908635705 , -0.00225785904 ,  0.000662383284 ]) * (UA/day)  # vitesse orbitale moyenne selon x en m /s
+vity_initiale = np.array([ -0.000001454464 , 0.017598654374 , 0.005438193497 , 0.011085933167 , -0.012547218645 ,  0.000582238793 ,  0.001958843815 ,  0.003057223075 ,  0.003082534743 ]) * (UA/day) # vitesse orbitale moyenne selon y en m /s
+vitz_initiale = np.array([ 2.31331*1e-7, 0.004045207525 , -0.0010403802 ,  -6.64284e-7 , -0.00034025333 , -0.000169090416 , -0.000229490343 ,  0.000040605647 ,  -0.000078743149 ]) * (UA/day) # vitesse orbitale moyenne selon z en m /s
+
+### definition des fonctions
+def norme(vect): # calcul de la norme de vecteurs 3D
+    v = np.array(vect)
+    n = np.sqrt(np.sum(v**2)) # norme = racine carre de la somme des coordonnees au carre
+    return n 
+
+def F_gravitationnel(m1,m2,r1,r2,i) : # calcule de la force gravitationnel entre 2 corp, m1,m2 masse et r_12 vect de distance entre 12
+
+    r =  (np.array(r2)-np.array(r1)) # vecteur de la différence de position
+
+    F_g = ( (G * m2) / (norme(r))**3)*r
+    
+    return F_g # vecteur de  la force gravitationnelle calculee
+
+def Euler(x , y , dt , i): # intégration par la méthode d'Euler x = dy/dt 
+
+    y = x * dt + y
+
+    return y
+
+def analytique(x0,T,t): # solution analytique circulaire de rayon x0, de periode T et de temps t 
+    x = x0 * np.cos(2*np.pi*t/T)
+    y = x0 * np.sin(2*np.pi*t/T)
+    return x,y 
+
+def acce(tab_masse,tab_pos,index): # (tableau des masses , tableau des positions , index) de la planète dont on cherche l'acceleration au temps t 
+    m_a = np.array([0,0,0])
+    for i in range(0,len(tab_masse)):
+         if index != i: # on ne peut calculer la force d'un corp sur lui meme
+             
+             Fg = F_gravitationnel(tab_masse[index] , tab_masse[i] , tab_pos[(3 * index) : (3 * index + 3) ] , tab_pos[(3 * i) : (3 * i + 3) ],i)
+        
+             m_a = m_a + Fg # somme des forces = masse * accélération
+
+    return m_a
+        
+def aphe_perilie(pos,T,dt): # calcul de la distance minimal et maximal au soleil, pos position, T periode exploree, dt pas de temps 
+    nb_pas = T / dt 
+    r = np.zeros(int(nb_pas))
+    for i in range(0,int(nb_pas)): # calcul du vecteur des distances au soleil
+         r[i] = norme(pos[i])
+    return max(r),min(r) 
+
+def Period(num_Planet,pos): # calcul de la période du corps par changement de pente
+    dR1 = 1.0 # nombre positif
+    j = num_Planet # numero du corps 
+    for i in range(1 , int(nb_pas)):
+        dR0 = dR1
+        dR1 = norme(pos[i , (3 * j) : (3 * j + 3)]-pos[0 , (3 * j) : (3 * j + 3)]) - norme(pos[i-1 , (3 * j) : (3 * j + 3)]-pos[0 , (3 * j) : (3 * j + 3)])
+        if ( dR1 > 0 ) and ( dR0 < 0 )  :
+             R_min = norme(pos[i , (3 * j) : (3 * j + 3)]-pos[0 , (3 * j) : (3 * j + 3)])/1e9 # distance minimal a la position initial a t=0
+             Period = i*dt / (3600.*24.) # en jour
+             return Period,R_min
+
+def calcul_trajectoire(T , dt , method ): # T temps, dt temps pas de temps, method methode d'integration
+    nb_pas = int(T / dt)
+    nb_objet = len(tab_mass)
+    # intitialisation des tableaux acceleration, vitesse, position
+    acc = np.array(np.zeros((int(nb_pas),3 * nb_objet)))
+    vit = np.array(np.zeros((int(nb_pas),3 * nb_objet)))
+    pos = np.array(np.zeros((int(nb_pas),3 * nb_objet)))
+
+    for k in range(1,len(vity_initiale)): # initialisation des conditions initiale a t=0
+        pos[0, 0 + 3*k] = posx_initiale[k] # position initiale selon x
+        pos[0, 1 + 3*k] = posy_initiale[k] # position initiale selon y
+        pos[0, 2 + 3*k] = posz_initiale[k] # position initiale selon z
+
+        vit[0, 0 + 3*k] = vitx_initiale[k] # vitesse initiale en x, au temps t=0
+        vit[0, 1 + 3*k] = vity_initiale[k] # vitesse initiale en y, au temps t=0
+        vit[0, 2 + 3*k] = vitz_initiale[k] # vitesse initiale en z, au temps t=0
+
+    for i in range(1,int(nb_pas)): # index de temps i
+
+        for j in range(0,len(tab_mass)): # le soleil pas fixé, j index de l'astre 
+
+             acc[i , (3 * j) : (3 * j + 3)] =  acce(tab_mass,pos[i-1],j)  ### PROBLEME !!
+             vit[i , (3 * j) : (3 * j + 3)] =  method(acc[i , (3 * j) : (3 * j + 3)] , vit[i-1 , (3 * j) : (3 * j + 3)] , dt , i)
+             pos[i , (3 * j) : (3 * j + 3)] =  method(vit[i , (3 * j) : (3 * j + 3)] , pos[i-1 , (3 * j) : (3 * j + 3)] , dt , i)
+        
+    return pos,vit
+
+def energie(V,R): # calcul de l'energie du système, V vecteurs vitesse, R vecteur position
+    E = np.zeros(len(V))
+    a = np.zeros(len(V))
+    for i in range(0,len(V)):
+        E[i] = (norme(V[i])**2/2)-(G* tab_mass[0]) /norme(R[i]) # E = 1/2 mv^2 - G Ms / R
+        a[i] = - (G* tab_mass[0]) / (2*E[i]) 
+    return E , a   
+
+### programme principal
+T = 3600.*24.*160  # T temps final en s
+dt = 5e2 # pas de temps en s
+nb_pas = int(T/dt) # nombre de pas
+
+J = T / (3600.*24.) # temps en jours
+
+# Calcul des position des astres
+Calcul = calcul_trajectoire(T , dt , Euler )
+POS = Calcul[0] # positions, position du corp i = POS[:,3i:3i+2] en coordonnees cartesienne
+VIT = Calcul[1] # vitesses
+
+num_planet = 1 # planete etudiee
+
+period = Period(num_planet,POS) # calcul de la periode de la planet numero num_planet
+print("Changement de pente (corps) ",num_planet," a T = ",period[0], "en jours, Rmin = ",period[1],"1e9 m")
+
+### Plot en 3d
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+ax.set_xlim(-3*1e11,3*1e11); ax.set_ylim(-3*1e11, 3*1e11); ax.set_zlim(-1e11/2, 1e11/2);
+for k in range(0,5): # système solaire interne
+    ax.plot(POS[:, k*3], POS[:,3*k+1], POS[:,3*k+2],label=str(planet[k])) 
+#    ax.plot(POS[0][ k*3], POS[0][3*k+1], POS[0][3*k+2] ,'ok') # position initiales
+ax.set_title('Systeme solaire interne, T='+str(T/(3600*24*365))+'ans')
+plt.show()
+
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+ax.set_xlim(-4*1e12, 4*1e12); ax.set_ylim(-4*1e12, 4*1e12); ax.set_zlim(-1e12, 1e12);
+for k in range(5,9): # systeme solaire externe
+    ax.plot(POS[:, k*3], POS[:,3*k+1], POS[:,3*k+2],label=str(planet[k])) 
+#    ax.plot(POS[0, k*3], POS[0,3*k+1], POS[0,3*k+2],'ok') # positions initiales  
+ax.set_title('Systeme solaire externe, T='+str(T/(3600*24*365))+'ans')  
+plt.show()
